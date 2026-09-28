@@ -1,10 +1,3 @@
-"""
-Testes da etapa de extração (extract.py).
-
-Rodar com:
-    pytest tests/test_extract.py -v
-"""
-
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
