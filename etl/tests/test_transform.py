@@ -1,3 +1,10 @@
+"""
+Testes da etapa de transformação (transform.py).
+
+Rodar com:
+    python -m pytest tests/test_transform.py -v
+"""
+
 import sys
 from pathlib import Path
 
@@ -148,3 +155,46 @@ def test_transformar_nao_altera_o_dataframe_original():
     transformar(df)
 
     pd.testing.assert_frame_equal(df, copia)
+
+
+# ---------- filtro geográfico ----------
+
+def test_transformar_filtra_por_municipios_ignorando_acento_e_caixa():
+    df = df_bruto(
+        linha(Municipio="SÃO PAULO"),
+        linha(Municipio="Santo Andre", **{"CNPJ da Revenda": "22.222.222/0001-22"}),
+        linha(Municipio="CAMPINAS", **{"CNPJ da Revenda": "33.333.333/0001-33"}),
+    )
+    resultado = transformar(df, municipios=["São Paulo", "Santo André"])
+
+    assert sorted(resultado["municipio"].tolist()) == ["SANTO ANDRE", "SÃO PAULO"]
+
+
+def test_transformar_filtra_por_estado():
+    df = df_bruto(
+        linha(**{"Estado - Sigla": "SP"}),
+        linha(**{"Estado - Sigla": "RJ", "CNPJ da Revenda": "22.222.222/0001-22"}),
+    )
+    resultado = transformar(df, estado="sp")
+
+    assert resultado["estado"].tolist() == ["SP"]
+
+
+def test_transformar_municipio_homonimo_de_outro_estado_e_excluido():
+    df = df_bruto(
+        linha(Municipio="SANTA ISABEL", **{"Estado - Sigla": "SP"}),
+        linha(Municipio="SANTA ISABEL", **{"Estado - Sigla": "PA",
+                                           "CNPJ da Revenda": "22.222.222/0001-22"}),
+    )
+    resultado = transformar(df, municipios=["Santa Isabel"], estado="SP")
+
+    assert resultado["estado"].tolist() == ["SP"]
+
+
+def test_transformar_sem_filtro_geografico_mantem_todos():
+    df = df_bruto(
+        linha(Municipio="SAO PAULO"),
+        linha(Municipio="CAMPINAS", **{"CNPJ da Revenda": "22.222.222/0001-22"}),
+    )
+
+    assert len(transformar(df)) == 2
