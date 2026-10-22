@@ -18,6 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from extract import (
     baixar_arquivo,
     encontrar_link_planilha,
+    localizar_cabecalho,
+    normalizar_coluna,
+    padronizar_colunas,
     obter_url_planilha_da_semana,
     ler_planilha_anp,
     validar_colunas,
@@ -29,10 +32,10 @@ from extract import (
 # ---------- Fixtures ----------
 
 CSV_VALIDO = (
-    "Regiao - Sigla;Estado - Sigla;Municipio;Revenda;CNPJ da Revenda;Bairro;"
-    "Cep;Produto;Data da Coleta;Valor de Venda;Unidade de Medida;Bandeira\n"
-    "SE;SP;SAO PAULO;POSTO EXEMPLO LTDA;11.111.111/0001-11;CENTRO;"
-    "01000-000;GASOLINA;12/09/2026;5,79;R$ / litro;BRANCA\n"
+    "CNPJ;RAZÃO;FANTASIA;ENDEREÇO;NÚMERO;COMPLEMENTO;BAIRRO;CEP;MUNICÍPIO;ESTADO;"
+    "BANDEIRA;PRODUTO;UNIDADE DE MEDIDA;PREÇO DE REVENDA;DATA DA COLETA\n"
+    "11111111000111;POSTO EXEMPLO LTDA;POSTO EXEMPLO;AV PAULISTA;1000;LOJA 1;CENTRO;"
+    "01000-000;SAO PAULO;SAO PAULO;BRANCA;GASOLINA COMUM;R$ / litro;5,79;12/10/2026\n"
 )
 
 
@@ -45,7 +48,7 @@ def csv_valido(tmp_path) -> Path:
 
 @pytest.fixture
 def csv_colunas_faltando(tmp_path) -> Path:
-    conteudo = "Estado - Sigla;Municipio;Produto\nSP;SAO PAULO;GASOLINA\n"
+    conteudo = "ESTADO;MUNICÍPIO;PRODUTO\nSAO PAULO;SAO PAULO;GASOLINA COMUM\n"
     caminho = tmp_path / "anp_incompleto.csv"
     caminho.write_text(conteudo, encoding="latin1")
     return caminho
@@ -59,7 +62,7 @@ def test_ler_planilha_anp_le_csv_valido(csv_valido):
     assert isinstance(df, pd.DataFrame)
     assert len(df) == 1
     assert "Produto" in df.columns
-    assert df.iloc[0]["Produto"] == "GASOLINA"
+    assert df.iloc[0]["Produto"] == "GASOLINA COMUM"
 
 
 def test_ler_planilha_anp_arquivo_inexistente_levanta_erro(tmp_path):
@@ -95,7 +98,7 @@ def test_validar_colunas_rejeita_dataframe_incompleto(csv_colunas_faltando):
     mensagem = str(erro.value)
     assert "Colunas ausentes" in mensagem
     # Confirma que aponta pelo menos uma coluna que realmente falta
-    assert "Revenda" in mensagem
+    assert "FANTASIA" in mensagem
 
 
 # ---------- Testes: baixar_arquivo (com mock, sem chamar a internet) ----------
@@ -212,3 +215,69 @@ def test_baixar_arquivo_detecta_xlsx_pelo_conteudo(mock_get, tmp_path):
     caminho = baixar_arquivo("https://exemplo.gov.br/download/12345", pasta_destino=tmp_path)
 
     assert caminho.suffix == ".xlsx"
+
+
+# ---------- Testes: XLSX com linhas de título e nomes de coluna diferentes ----------
+
+CABECALHO_ANP_REAL = [
+    "CNPJ", "RAZÃO", "FANTASIA", "ENDEREÇO", "NÚMERO", "COMPLEMENTO", "BAIRRO", "CEP",
+    "MUNICÍPIO", "ESTADO", "BANDEIRA", "PRODUTO", "UNIDADE DE MEDIDA",
+    "PREÇO DE REVENDA", "DATA DA COLETA",
+]
+
+
+@pytest.fixture
+def xlsx_com_titulos(tmp_path) -> Path:
+    """Simula o XLSX da ANP: título e linhas em branco antes do cabeçalho."""
+    linhas = [
+        ["AGÊNCIA NACIONAL DO PETRÓLEO, GÁS NATURAL E BIOCOMBUSTÍVEIS - ANP"] + [None] * 14,
+        ["SISTEMA DE LEVANTAMENTO DE PREÇOS"] + [None] * 14,
+        [None] * 15,
+        CABECALHO_ANP_REAL,
+        [11111111000111, "POSTO EXEMPLO LTDA", "POSTO EXEMPLO", "AV PAULISTA", 1000, "LOJA 1",
+         "CENTRO", "01000-000", "SAO PAULO", "SAO PAULO", "BRANCA", "GASOLINA COMUM",
+         "R$ / litro", 5.79, "12/10/2026"],
+    ]
+    caminho = tmp_path / "revendas_teste.xlsx"
+    pd.DataFrame(linhas).to_excel(caminho, header=False, index=False)
+    return caminho
+
+
+def test_normalizar_coluna_ignora_acento_caixa_e_pontuacao():
+    assert normalizar_coluna("Região - Sigla") == "REGIAO SIGLA"
+    assert normalizar_coluna("REGIAO   SIGLA") == "REGIAO SIGLA"
+    assert normalizar_coluna(None) == ""
+
+
+def test_padronizar_colunas_renomeia_para_o_nome_canonico():
+    df = pd.DataFrame(columns=["MUNICÍPIO", "preco de revenda", "COLUNA EXTRA"])
+
+    resultado = padronizar_colunas(df)
+
+    assert resultado.columns.tolist() == ["Municipio", "PREÇO DE REVENDA", "COLUNA EXTRA"]
+
+
+def test_localizar_cabecalho_pula_linhas_de_titulo(xlsx_com_titulos):
+    assert localizar_cabecalho(xlsx_com_titulos) == 3
+
+
+def test_localizar_cabecalho_devolve_zero_quando_nao_encontra(tmp_path):
+    caminho = tmp_path / "sem_cabecalho.xlsx"
+    pd.DataFrame([["a", "b"], ["c", "d"]]).to_excel(caminho, header=False, index=False)
+
+    assert localizar_cabecalho(caminho) == 0
+
+
+def test_ler_planilha_anp_xlsx_com_titulos_devolve_colunas_canonicas(xlsx_com_titulos):
+    df = ler_planilha_anp(xlsx_com_titulos)
+
+    assert len(df) == 1
+    assert df.iloc[0]["Municipio"] == "SAO PAULO"
+    assert df.iloc[0]["Produto"] == "GASOLINA COMUM"
+    validar_colunas(df)  # não deve levantar
+
+
+def test_extrair_xlsx_com_titulos_passa_na_validacao(xlsx_com_titulos):
+    df = extrair(str(xlsx_com_titulos))
+
+    assert set(COLUNAS_ESPERADAS).issubset(df.columns)

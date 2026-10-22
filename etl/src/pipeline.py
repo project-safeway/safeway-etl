@@ -1,3 +1,9 @@
+"""
+pipeline.py
+
+Orquestra as três etapas: Extract -> Transform -> Load.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -31,9 +37,14 @@ def executar_pipeline(
     limpo = transformar(bruto, produtos=produtos, municipios=municipios, estado=estado)
 
     if limpo.empty:
+        produtos_vistos = (
+            sorted(bruto["Produto"].dropna().astype(str).str.upper().unique())[:15]
+            if "Produto" in bruto.columns else []
+        )
         raise RuntimeError(
             f"Nenhuma linha restou após a transformação ({len(bruto)} extraídas). "
-            "Verifique filtros de produto/município e o layout da planilha."
+            f"Produtos encontrados na planilha: {produtos_vistos}. "
+            "Verifique filtros de produto/município/estado e o layout da planilha."
         )
 
     gravados = carregar(limpo, engine)

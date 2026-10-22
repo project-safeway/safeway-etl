@@ -1,0 +1,55 @@
+2026-10-22 20:15:47,439 [INFO] db: Tabelas verificadas/criadas.
+2026-10-22 20:15:47,440 [ERROR] main: ETL falhou
+Traceback (most recent call last):
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\main.py", line 64, in main
+    resumo = executar_pipeline(args.origem, engine)
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\src\pipeline.py", line 36, in executar_pipeline
+    bruto = extrair(origem)
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\src\extract.py", line 182, in extrair
+    df = ler_planilha_anp(caminho)
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\src\extract.py", line 128, in ler_planilha_anp
+    raise FileNotFoundError(f"Arquivo não encontrado: {caminho}")
+FileNotFoundError: Arquivo não encontrado: datarawrevendas_lpc_2026_10_11-2026_10_17.xlsx
+2026-10-22 20:17:16,004 [INFO] db: Tabelas verificadas/criadas.
+2026-10-22 20:17:16,005 [INFO] extract: Lendo XLSX: data\raw\revendas_lpc_2026_10_11-2026_10_17.xlsx
+2026-10-22 20:17:18,329 [ERROR] main: ETL falhou
+Traceback (most recent call last):
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\main.py", line 64, in main
+    resumo = executar_pipeline(args.origem, engine)
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\src\pipeline.py", line 36, in executar_pipeline
+    bruto = extrair(origem)
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\src\extract.py", line 183, in extrair
+    validar_colunas(df, colunas_esperadas)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\src\extract.py", line 160, in validar_colunas
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: Colunas ausentes na planilha da ANP: ['Regiao - Sigla', 'Estado - Sigla', 'Municipio', 'Revenda', 'CNPJ da Revenda', 'Bairro', 'Cep', 'Produto', 'Data da Coleta', 'Valor de Venda', 'Unidade de Medida', 'Bandeira']. Colunas encontradas: ['AGÊNCIA NACIONAL DO PETRÓLEO, GÁS NATURAL E BIOCOMBUSTÍVEIS - ANP', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4', 'Unnamed: 5', 'Unnamed: 6', 'Unnamed: 7', 'Unnamed: 8', 'Unnamed: 9', 'Unnamed: 10', 'Unnamed: 11', 'Unnamed: 12', 'Unnamed: 13', 'Unnamed: 14']
+2026-10-22 20:24:41,985 [INFO] db: Tabelas verificadas/criadas.
+2026-10-22 20:24:41,986 [INFO] extract: Lendo XLSX: data\raw\revendas_lpc_2026_10_11-2026_10_17.xlsx
+2026-10-22 20:24:42,300 [INFO] extract: Cabeçalho encontrado na linha 9 do arquivo.
+2026-10-22 20:24:43,716 [ERROR] main: ETL falhou
+Traceback (most recent call last):
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\main.py", line 64, in main
+    resumo = executar_pipeline(args.origem, engine)
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\src\pipeline.py", line 36, in executar_pipeline
+    bruto = extrair(origem)
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\src\extract.py", line 228, in extrair
+    validar_colunas(df, colunas_esperadas)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Jusle\Desktop\Projeto\safeway-etl\etl\src\extract.py", line 205, in validar_colunas
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: Colunas ausentes na planilha da ANP: ['Regiao - Sigla', 'Estado - Sigla', 'Revenda', 'CNPJ da Revenda', 'Valor de Venda']. Colunas encontradas: ['CNPJ', 'RAZÃO', 'FANTASIA', 'ENDEREÇO', 'NÚMERO', 'COMPLEMENTO', 'Bairro', 'Cep', 'Municipio', 'ESTADO', 'Bandeira', 'Produto', 'Unidade de Medida', 'PREÇO DE REVENDA', 'Data da Coleta']
+2026-10-22 20:33:13,232 [INFO] db: Tabelas verificadas/criadas.
+2026-10-22 20:33:13,275 [INFO] extract: Lendo XLSX: data\raw\revendas_lpc_2026_10_11-2026_10_17.xlsx
+2026-10-22 20:33:13,802 [INFO] extract: Cabeçalho encontrado na linha 9 do arquivo.
+2026-10-22 20:33:15,088 [INFO] extract: Validação de colunas OK.
+2026-10-22 20:33:15,088 [INFO] extract: Extração concluída: 20489 linhas, 15 colunas.
+2026-10-22 20:33:15,194 [INFO] transform: Transformação concluída: 20489 -> 804 linhas.
+2026-10-22 20:33:15,258 [INFO] load: Lote gravado: 804 registros.
+2026-10-22 20:33:15,261 [INFO] load: Carga concluída: 804 registros processados.
+2026-10-22 20:33:15,262 [INFO] pipeline: Pipeline concluído: {'linhas_extraidas': 20489, 'linhas_transformadas': 804, 'linhas_carregadas': 804}
+2026-10-22 20:33:15,264 [INFO] main: ETL finalizado com sucesso: {'linhas_extraidas': 20489, 'linhas_transformadas': 804, 'linhas_carregadas': 804}

@@ -23,8 +23,8 @@ from db import CHAVE_UNICA, precos_combustiveis
 logger = logging.getLogger(__name__)
 
 COLUNAS_OBRIGATORIAS = [
-    "cnpj", "produto", "data_coleta", "regiao", "estado", "municipio",
-    "revenda", "bairro", "cep", "preco_venda", "unidade_medida", "bandeira",
+    "cnpj", "produto", "data_coleta", "estado", "municipio", "revenda",
+    "endereco", "bairro", "cep", "preco_venda", "unidade_medida", "bandeira",
 ]
 
 # Colunas que são atualizadas quando o registro já existe (tudo, menos a chave)
@@ -39,6 +39,11 @@ def _valor_para_banco(coluna: str, valor):
         return valor.date()
     if coluna == "preco_venda":
         return Decimal(str(round(float(valor), 3)))
+    if isinstance(valor, str):
+        # Evita "Data too long" no MySQL: corta no tamanho da coluna
+        limite = getattr(precos_combustiveis.c[coluna].type, "length", None)
+        if limite and len(valor) > limite:
+            return valor[:limite]
     return valor
 
 

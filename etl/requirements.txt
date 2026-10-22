@@ -2,8 +2,8 @@ pandas
 openpyxl
 requests
 beautifulsoup4
-cryptography
 sqlalchemy
 pymysql
+cryptography
 python-dotenv
 pytest

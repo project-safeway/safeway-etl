@@ -3,9 +3,9 @@ transform.py
 
 Etapa de TRANSFORMAÇÃO do ETL de preços de combustíveis (ANP).
 
-Recebe o DataFrame bruto validado pelo extract.py e devolve um DataFrame
-limpo, com nomes de colunas em snake_case e tipos corretos, pronto para
-ser carregado no MySQL.
+Recebe o DataFrame bruto validado pelo extract.py (layout real da planilha
+"Preços por posto revendedor") e devolve um DataFrame limpo, com nomes de
+colunas em snake_case e tipos corretos, pronto para ser carregado no MySQL.
 """
 
 from __future__ import annotations
@@ -15,30 +15,38 @@ import re
 
 import pandas as pd
 
-from utils import normalizar_texto
+from utils import normalizar_texto, para_sigla_uf
 
 logger = logging.getLogger(__name__)
 
-# Mapeamento: nome na planilha da ANP -> nome no banco
+# Mapeamento: nome na planilha da ANP (já padronizado pelo extract) -> nome interno
 RENOMEAR_COLUNAS = {
-    "Regiao - Sigla": "regiao",
-    "Estado - Sigla": "estado",
-    "Municipio": "municipio",
-    "Revenda": "revenda",
-    "CNPJ da Revenda": "cnpj",
+    "CNPJ": "cnpj",
+    "RAZÃO": "razao",
+    "FANTASIA": "fantasia",
+    "ENDEREÇO": "logradouro",
+    "NÚMERO": "numero",
+    "COMPLEMENTO": "complemento",
     "Bairro": "bairro",
     "Cep": "cep",
-    "Produto": "produto",
-    "Data da Coleta": "data_coleta",
-    "Valor de Venda": "preco_venda",
-    "Unidade de Medida": "unidade_medida",
+    "Municipio": "municipio",
+    "ESTADO": "estado",
     "Bandeira": "bandeira",
+    "Produto": "produto",
+    "Unidade de Medida": "unidade_medida",
+    "PREÇO DE REVENDA": "preco_venda",
+    "Data da Coleta": "data_coleta",
 }
 
-PRODUTOS_PADRAO = ["GASOLINA", "GASOLINA ADITIVADA"]
+# A planilha traz "GASOLINA COMUM"; "GASOLINA" fica por compatibilidade.
+PRODUTOS_PADRAO = ["GASOLINA", "GASOLINA COMUM", "GASOLINA ADITIVADA"]
 
-COLUNAS_TEXTO = ["regiao", "estado", "municipio", "revenda", "bairro",
-                 "produto", "unidade_medida", "bandeira"]
+COLUNAS_TEXTO = ["razao", "fantasia", "logradouro", "complemento", "bairro",
+                 "municipio", "estado", "bandeira", "produto", "unidade_medida"]
+
+# Colunas que seguem para o banco (na ordem)
+COLUNAS_FINAIS = ["cnpj", "revenda", "endereco", "bairro", "cep", "municipio", "estado",
+                  "bandeira", "produto", "unidade_medida", "preco_venda", "data_coleta"]
 
 
 def apenas_digitos(valor, tamanho: int | None = None) -> str | None:
@@ -46,9 +54,14 @@ def apenas_digitos(valor, tamanho: int | None = None) -> str | None:
     Remove tudo que não for dígito. Se `tamanho` for informado, preenche
     com zeros à esquerda e devolve None se o resultado exceder o tamanho
     ou vier vazio (dado inválido).
+
+    Aceita números vindos do Excel: 11111111000111.0 vira "11111111000111"
+    (sem o ".0" virar um dígito a mais).
     """
     if pd.isna(valor):
         return None
+    if isinstance(valor, float) and valor.is_integer():
+        valor = int(valor)
     digitos = re.sub(r"\D", "", str(valor))
     if not digitos:
         return None
@@ -69,6 +82,37 @@ def converter_preco(serie: pd.Series) -> pd.Series:
     return pd.to_numeric(texto, errors="coerce")
 
 
+def _limpar(valor) -> str | None:
+    """Texto sem espaços repetidos; None para nulo ou vazio."""
+    if pd.isna(valor):
+        return None
+    texto = " ".join(str(valor).split())
+    return texto or None
+
+
+def formatar_numero(valor) -> str | None:
+    """Número do endereço: 1852.0 -> '1852'; 'S/N' continua 'S/N'."""
+    if pd.isna(valor):
+        return None
+    if isinstance(valor, float) and valor.is_integer():
+        valor = int(valor)
+    return _limpar(valor)
+
+
+def montar_endereco(logradouro, numero, complemento) -> str | None:
+    """Junta os três campos: 'AV PAULISTA, 1000 - LOJA 1'."""
+    rua = _limpar(logradouro)
+    num = formatar_numero(numero)
+    comp = _limpar(complemento)
+
+    endereco = rua or ""
+    if num:
+        endereco = f"{endereco}, {num}" if endereco else num
+    if comp:
+        endereco = f"{endereco} - {comp}" if endereco else comp
+    return endereco or None
+
+
 def transformar(
     df: pd.DataFrame,
     produtos: list[str] | None = None,
@@ -80,11 +124,12 @@ def transformar(
       1. seleciona e renomeia colunas
       2. padroniza textos (strip + maiúsculas)
       3. filtra os produtos de interesse (padrão: gasolina comum e aditivada)
-      3b. se informado, filtra por estado e/ou lista de municípios
-          (comparação sem acento e sem diferenciar maiúsculas)
-      4. normaliza CNPJ (14 dígitos) e CEP (8 dígitos)
-      5. converte preço e data
-      6. descarta linhas inválidas e duplicadas
+      4. converte o estado (por extenso ou sigla) para sigla e, se informado,
+         filtra por estado e/ou lista de municípios (sem acento, sem caixa)
+      5. define o nome do posto (fantasia, ou razão social se vazio) e monta o endereço
+      6. normaliza CNPJ (14 dígitos) e CEP (8 dígitos)
+      7. converte preço e data
+      8. descarta linhas inválidas e duplicadas
     """
     produtos = [p.upper() for p in (produtos or PRODUTOS_PADRAO)]
     total_inicial = len(df)
@@ -96,12 +141,20 @@ def transformar(
 
     out = out[out["produto"].isin(produtos)].copy()
 
+    out["estado"] = out["estado"].map(para_sigla_uf)
     if estado:
-        out = out[out["estado"] == normalizar_texto(estado)].copy()
+        out = out[out["estado"] == para_sigla_uf(estado)].copy()
 
     if municipios:
         alvo = {normalizar_texto(m) for m in municipios}
         out = out[out["municipio"].map(normalizar_texto).isin(alvo)].copy()
+
+    sem_fantasia = (out["fantasia"].isna() | (out["fantasia"] == "")).fillna(True).astype(bool)
+    out["revenda"] = out["fantasia"].where(~sem_fantasia, out["razao"])
+    out["endereco"] = [
+        montar_endereco(rua, num, comp)
+        for rua, num, comp in zip(out["logradouro"], out["numero"], out["complemento"])
+    ]
 
     out["cnpj"] = out["cnpj"].map(lambda v: apenas_digitos(v, 14))
     out["cep"] = out["cep"].map(lambda v: apenas_digitos(v, 8))
@@ -114,7 +167,7 @@ def transformar(
     out = out[out["preco_venda"] > 0]
 
     out = out.drop_duplicates(subset=["cnpj", "produto", "data_coleta"], keep="last")
-    out = out.reset_index(drop=True)
+    out = out[COLUNAS_FINAIS].reset_index(drop=True)
 
     logger.info("Transformação concluída: %d -> %d linhas.", total_inicial, len(out))
     return out

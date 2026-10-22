@@ -24,17 +24,24 @@ from pipeline import executar_pipeline, executar_semanal
 import main as main_modulo
 
 CABECALHO = (
-    "Regiao - Sigla;Estado - Sigla;Municipio;Revenda;CNPJ da Revenda;Bairro;"
-    "Cep;Produto;Data da Coleta;Valor de Venda;Unidade de Medida;Bandeira\n"
+    "CNPJ;RAZÃO;FANTASIA;ENDEREÇO;NÚMERO;COMPLEMENTO;BAIRRO;CEP;MUNICÍPIO;ESTADO;"
+    "BANDEIRA;PRODUTO;UNIDADE DE MEDIDA;PREÇO DE REVENDA;DATA DA COLETA\n"
 )
 
+
+def _posto(cnpj, municipio, estado, produto, preco):
+    return (f"{cnpj};RAZAO {cnpj};POSTO {cnpj};RUA A;10;;CENTRO;01000-000;{municipio};"
+            f"{estado};BRANCA;{produto};R$ / litro;{preco};12/10/2026\n")
+
+
 CSV = CABECALHO + (
-    # Dentro do escopo (acento + caixa diferentes do config)
-    "SE;SP;SÃO PAULO;POSTO A;11.111.111/0001-11;CENTRO;01000-000;GASOLINA;12/09/2026;5,79;R$ / litro;BRANCA\n"
-    "SE;SP;SANTO ANDRE;POSTO B;22.222.222/0001-22;CENTRO;09000-000;GASOLINA ADITIVADA;12/09/2026;6,09;R$ / litro;SHELL\n"
-    # Fora do escopo: município e produto
-    "SE;SP;CAMPINAS;POSTO C;33.333.333/0001-33;CENTRO;13000-000;GASOLINA;12/09/2026;5,59;R$ / litro;BRANCA\n"
-    "SE;SP;SAO PAULO;POSTO D;44.444.444/0001-44;CENTRO;01000-000;ETANOL;12/09/2026;4,19;R$ / litro;BRANCA\n"
+    # Dentro do escopo (Grande SP, gasolina; acento/caixa diferentes do config)
+    _posto("11111111000111", "SÃO PAULO", "SAO PAULO", "GASOLINA COMUM", "5,79")
+    + _posto("22222222000122", "SANTO ANDRE", "SAO PAULO", "GASOLINA ADITIVADA", "6,09")
+    # Fora do escopo: município, produto e estado
+    + _posto("33333333000133", "CAMPINAS", "SAO PAULO", "GASOLINA COMUM", "5,59")
+    + _posto("44444444000144", "SAO PAULO", "SAO PAULO", "ETANOL", "4,19")
+    + _posto("55555555000155", "SANTA ISABEL", "PARA", "GASOLINA COMUM", "6,99")
 )
 
 
@@ -77,7 +84,7 @@ def test_pipeline_filtra_escopo_e_carrega_no_banco(csv_anp, engine):
     resumo = executar_pipeline(str(csv_anp), engine)
 
     assert resumo == {
-        "linhas_extraidas": 4,
+        "linhas_extraidas": 5,
         "linhas_transformadas": 2,  # só Grande SP + gasolina
         "linhas_carregadas": 2,
     }

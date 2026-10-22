@@ -32,10 +32,10 @@ def linha(**sobrescrever) -> dict:
         "cnpj": "11111111000111",
         "produto": "GASOLINA",
         "data_coleta": pd.Timestamp("2026-09-12"),
-        "regiao": "SE",
         "estado": "SP",
         "municipio": "SAO PAULO",
-        "revenda": "POSTO EXEMPLO LTDA",
+        "revenda": "POSTO EXEMPLO",
+        "endereco": "AV PAULISTA, 1000 - LOJA 1",
         "bairro": "CENTRO",
         "cep": "01000000",
         "preco_venda": 5.79,
@@ -203,3 +203,12 @@ def test_upsert_mysql_usa_on_duplicate_key_update():
 
     assert "ON DUPLICATE KEY UPDATE" in sql
     assert "preco_venda" in sql
+
+
+def test_carregar_corta_textos_maiores_que_a_coluna(engine):
+    texto_gigante = "A" * 500  # a coluna endereco aceita 255
+    carregar(df_de(linha(endereco=texto_gigante)), engine)
+
+    registros = buscar_todos(engine)
+
+    assert len(registros[0]["endereco"]) == 255

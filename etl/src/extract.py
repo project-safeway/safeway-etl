@@ -1,4 +1,12 @@
 """
+extract.py
+
+Etapa de EXTRAÇÃO do ETL de preços de combustíveis (ANP).
+
+A ANP não disponibiliza uma API REST: os dados são publicados semanalmente
+como planilha (CSV ou XLSX) em:
+https://www.gov.br/anp/pt-br/.../levantamento-de-precos-de-combustiveis
+
 Este módulo cobre dois cenários:
 1) Você já baixou o arquivo manualmente -> use `ler_planilha_anp()`.
 2) Você tem a URL direta do arquivo daquela semana -> use `extrair()`,
@@ -13,6 +21,7 @@ rápido antes de rodar em produção.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from datetime import datetime
 
@@ -27,27 +36,35 @@ from utils import normalizar_texto
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# Colunas do arquivo "Preços por posto revendedor" da ANP (conferidas com o
+# arquivo real da semana 11/10 a 17/10/2026). Ajuste aqui se o layout mudar.
 COLUNAS_ESPERADAS = [
-    "Regiao - Sigla",
-    "Estado - Sigla",
-    "Municipio",
-    "Revenda",
-    "CNPJ da Revenda",
+    "CNPJ",
+    "RAZÃO",
+    "FANTASIA",
+    "ENDEREÇO",
+    "NÚMERO",
+    "COMPLEMENTO",
     "Bairro",
     "Cep",
-    "Produto",
-    "Data da Coleta",
-    "Valor de Venda",
-    "Unidade de Medida",
+    "Municipio",
+    "ESTADO",
     "Bandeira",
+    "Produto",
+    "Unidade de Medida",
+    "PREÇO DE REVENDA",
+    "Data da Coleta",
 ]
 
+# A ANP costuma exportar com ';' como separador e encoding latin1.
+# Deixamos uma lista de tentativas caso o arquivo baixado varie.
 TENTATIVAS_LEITURA = [
     {"sep": ";", "encoding": "latin1"},
     {"sep": ";", "encoding": "utf-8"},
     {"sep": ",", "encoding": "utf-8"},
 ]
 
+# Alguns sites do governo bloqueiam o User-Agent padrão do requests
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; safeway-etl/1.0)"}
 
 
@@ -104,6 +121,48 @@ def baixar_arquivo(url: str, pasta_destino: str | Path = "data/raw") -> Path:
     return caminho_destino
 
 
+def normalizar_coluna(nome) -> str:
+    """
+    Forma "comparável" de um nome de coluna: sem acento, maiúsculas e sem
+    pontuação. Ex.: 'Região - Sigla' e 'REGIAO SIGLA' viram 'REGIAO SIGLA'.
+    """
+    texto = normalizar_texto(nome) or ""
+    return re.sub(r"[^A-Z0-9]+", " ", texto).strip()
+
+
+def padronizar_colunas(df: pd.DataFrame, colunas_esperadas: list[str] = COLUNAS_ESPERADAS) -> pd.DataFrame:
+    """
+    Renomeia as colunas do DataFrame para os nomes canônicos de
+    `colunas_esperadas` quando só diferem em acento, caixa ou pontuação.
+    Colunas que não correspondem a nenhuma esperada ficam como estão.
+    """
+    canonicos = {normalizar_coluna(c): c for c in colunas_esperadas}
+    renomear = {}
+    for coluna in df.columns:
+        canonico = canonicos.get(normalizar_coluna(coluna))
+        if canonico and canonico != coluna:
+            renomear[coluna] = canonico
+    return df.rename(columns=renomear)
+
+
+def localizar_cabecalho(caminho: str | Path, colunas_esperadas: list[str] = COLUNAS_ESPERADAS,
+                        max_linhas: int = 30, minimo_colunas: int = 3) -> int:
+    """
+    Os XLSX da ANP trazem linhas de título (nome da agência, período etc.)
+    acima da tabela. Procura nas primeiras `max_linhas` linhas a primeira que
+    contém pelo menos `minimo_colunas` nomes de coluna esperados e devolve o
+    índice dela (0 = primeira linha). Se não achar, devolve 0.
+    """
+    esperados = {normalizar_coluna(c) for c in colunas_esperadas}
+    topo = pd.read_excel(caminho, header=None, nrows=max_linhas)
+
+    for indice, linha in topo.iterrows():
+        nomes = {normalizar_coluna(v) for v in linha if pd.notna(v)}
+        if len(nomes & esperados) >= minimo_colunas:
+            return int(indice)
+    return 0
+
+
 def ler_planilha_anp(caminho: str | Path) -> pd.DataFrame:
     """
     Lê o arquivo (CSV ou XLSX) baixado da ANP e retorna um DataFrame.
@@ -116,8 +175,10 @@ def ler_planilha_anp(caminho: str | Path) -> pd.DataFrame:
 
     if caminho.suffix.lower() == ".xlsx":
         logger.info("Lendo XLSX: %s", caminho)
-        df = pd.read_excel(caminho)
-        return df
+        linha_cabecalho = localizar_cabecalho(caminho)
+        logger.info("Cabeçalho encontrado na linha %d do arquivo.", linha_cabecalho)
+        df = pd.read_excel(caminho, header=linha_cabecalho)
+        return padronizar_colunas(df)
 
     ultimo_erro: Exception | None = None
     for tentativa in TENTATIVAS_LEITURA:
@@ -125,7 +186,7 @@ def ler_planilha_anp(caminho: str | Path) -> pd.DataFrame:
             logger.info("Tentando ler CSV com %s", tentativa)
             df = pd.read_csv(caminho, **tentativa)
             if df.shape[1] > 1:  # separador errado geralmente gera 1 coluna só
-                return df
+                return padronizar_colunas(df)
         except (UnicodeDecodeError, pd.errors.ParserError) as erro:
             ultimo_erro = erro
             continue
