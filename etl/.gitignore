@@ -1,0 +1,23 @@
+.env
+.env.*
+!.env.example
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ---------- Ambientes virtuais ----------
+.venv/
+venv/
+env/
+
+# ---------- Dados e logs gerados pelo ETL ----------
+# Planilhas baixadas da ANP (grandes e recriáveis)
+data/raw/
+data/processed/
+# Logs de execução
+logs/
+*.log
